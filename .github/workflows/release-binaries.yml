@@ -5,7 +5,8 @@
 # Editing a release's pre-release checkbox on GitHub does not trigger this
 # workflow and never rebuilds or re-uploads anything. Real releases get their
 # own non-hyphenated tag. To repair or re-upload assets for an existing tag,
-# run workflow_dispatch with publish_assets_to_release.
+# run workflow_dispatch from that tag (--ref <tag>) with
+# publish_assets_to_release.
 #
 # Repo guards: every step that touches the outside world (Docker Hub login
 # and pushes, build provenance attestation) only runs when
@@ -170,6 +171,20 @@ jobs:
           if [ -z "$release_tag" ]; then
             echo "A release tag is required. Set workflow_dispatch input release_tag." >&2
             exit 1
+          fi
+
+          # Build provenance names this run's commit, so a run that can attest
+          # or publish must build exactly that commit. Resolve the ref once and
+          # pin every job's checkout to the SHA: a tag that moves mid-run can
+          # then not swap in other code. A repair must be dispatched from the
+          # release tag itself.
+          if [ "$DRY_RUN" != "true" ]; then
+            resolved_sha="$(gh api "repos/${REPOSITORY}/commits/${checkout_ref}" --jq '.sha')"
+            if [ "$resolved_sha" != "$GITHUB_SHA" ]; then
+              echo "::error title=Build commit mismatch::${checkout_ref} is ${resolved_sha}, but this run is for ${GITHUB_SHA}. Dispatch repairs from the release tag: gh workflow run release-binaries.yml --ref <tag> -f release_tag=<tag> -f publish_assets_to_release=true" >&2
+              exit 1
+            fi
+            checkout_ref="$GITHUB_SHA"
           fi
 
           if [ -n "$INPUT_BUILD_BACKEND" ] && [ "$INPUT_BUILD_BACKEND" != "auto" ]; then
@@ -435,21 +450,6 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.resolve-release.outputs.checkout_ref }}
-
-      # Attestations name this run's commit, not the checkout, so refuse to
-      # attest or publish anything built from another commit. A repair
-      # dispatch must therefore run from the release tag itself.
-      - name: Check the build matches this run's commit
-        env:
-          RUN_SHA: ${{ github.sha }}
-          CHECKOUT_REF: ${{ needs.resolve-release.outputs.checkout_ref }}
-        run: |
-          set -euo pipefail
-          built_sha="$(git rev-parse HEAD)"
-          if [ "$built_sha" != "$RUN_SHA" ]; then
-            echo "::error title=Build commit mismatch::${CHECKOUT_REF} is ${built_sha}, but this run is for ${RUN_SHA}. Dispatch repairs from the release tag: gh workflow run release-binaries.yml --ref <tag> -f release_tag=<tag> -f publish_assets_to_release=true" >&2
-            exit 1
-          fi
 
       - name: Download built artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8.0.2
