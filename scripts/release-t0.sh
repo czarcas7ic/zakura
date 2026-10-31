@@ -426,6 +426,14 @@ preflight_expected_head() {
         || die "preflight: head" "git cat-file -e ${HEAD_SHA}" "object missing locally" \
             "the commit available to push" "fetch or build the release commit first"
     fi
+    # A hotfix dispatches the branch's own Create release workflow. One based on
+    # a release from before the security-key gate would publish on a button
+    # click, so it must carry the gate.
+    git -C "$repo_root" fetch -q origin "$HEAD_SHA" 2>/dev/null || true
+    git -C "$repo_root" cat-file -e "${HEAD_SHA}:.github/scripts/release_approval.py" 2>/dev/null \
+      || die "preflight: head" "release_approval.py at ${HEAD_SHA:0:9}" "missing" \
+          "the security-key release approval gate" \
+          "merge or cherry-pick the gate commit from main into hotfix/${TAG} (docs/release-approval.md)"
   fi
 }
 
