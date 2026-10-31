@@ -564,7 +564,9 @@ jobs:
           # verifies, so refuse. Source-first approvals (`sha256sums none`)
           # cover no assets and allow this run to attach them. Releases from
           # before the gate have no approval. Any lookup error fails the step.
-          asset_names="$(gh api "repos/${REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '[.assets[].name]')"
+          # gh release view also finds the draft a repair dispatch creates,
+          # which the releases/tags API does not.
+          asset_names="$(gh release view "$RELEASE_TAG" --repo "$REPOSITORY" --json assets --jq '[.assets[].name]')"
           if jq -e 'any(. == "release-approval.txt")' <<<"$asset_names" >/dev/null; then
             gh release download "$RELEASE_TAG" --repo "$REPOSITORY" \
               --pattern release-approval.txt --output ./release-approval.txt
