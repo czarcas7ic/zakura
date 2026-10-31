@@ -47,6 +47,7 @@ for cmd in gh jq python3; do
   command -v "$cmd" >/dev/null || die "missing required tool: $cmd"
 done
 [ -f "$KEY" ] || die "no security-key handle at ${KEY}; see docs/release-approval.md (or pass --key)"
+gh auth status >/dev/null 2>&1 || die "gh is not signed in; run: gh auth login"
 
 run=$(gh api "repos/${REPO}/actions/runs/${RUN_ID}") || die "cannot read run ${RUN_ID} in ${REPO}"
 [ "$(jq -r '.path' <<<"$run")" = ".github/workflows/create-release.yml" ] \

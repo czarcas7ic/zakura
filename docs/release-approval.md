@@ -18,12 +18,17 @@ You need a YubiKey 5 series key (firmware 5.2.3 or newer), a Mac or Linux
 machine, and a clone of this repository. Other FIDO2 keys and software
 authenticators are rejected: the key must be attested by Yubico.
 
-1. Install tools. On macOS the built-in `ssh-keygen` cannot use security keys,
-   so install Homebrew's:
+1. Install tools and sign in to GitHub. On macOS the built-in `ssh-keygen`
+   cannot use security keys, so install Homebrew's:
 
    ```bash
-   brew install openssh ykman
+   brew install openssh ykman gh
+   gh auth login
    ```
+
+   The approve script uses your `gh` login to read the run and post the
+   approval as you. That login alone cannot release anything: the publish job
+   also requires your YubiKey signature.
 
 2. Plug in the key and give it a FIDO2 PIN if it has none.
    `ykman fido info` shows `PIN: Not set` if so.
@@ -76,6 +81,7 @@ authenticators are rejected: the key must be attested by Yubico.
 | `invalid format` while signing or enrolling | The touch timed out. Run the script again. Nothing was approved. |
 | `failed the YubiKey attestation check` while enrolling | The key is not a genuine YubiKey, or its firmware predates Ed25519 (5.2.3). |
 | `No FIDO SecurityKeyProvider specified` | macOS `ssh-keygen` was used. Install Homebrew's OpenSSH (step 1). |
+| `gh is not signed in` | Run `gh auth login` (step 1). |
 | `your GitHub account is not a reviewer` | Ask an admin to add you to the `release` environment (step 5). |
 | Publish job failed with "no security-key signature" | Someone clicked the GitHub button. Nothing was tagged, so start a new `Create release` run for the same tag and approve that one with the script. Avoid "Re-run failed jobs": in testing, GitHub left those re-runs stuck in "queued". |
 | Publish job failed with "not from exactly one listed release signer" | Your key is not in `.github/release-signers` at the release commit. |
