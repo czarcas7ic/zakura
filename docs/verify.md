@@ -21,12 +21,16 @@ for `v1.0.0`):
 
 ```sh
 TAG=v1.0.0
+# The commit the protected tag points to. Stop if this does not print one.
+COMMIT="$(git ls-remote --tags --refs https://github.com/zakura-core/zakura | awk -v ref="refs/tags/${TAG}" '$2 == ref {print $1}')"
+echo "$COMMIT" | grep -Ex '[0-9a-f]{40}'
+
 BASE="https://github.com/zakura-core/zakura/releases/download/${TAG}"
 curl -fsSLO "${BASE}/zakurad-${TAG}-linux-x86_64.tar.gz"
 curl -fsSLO "${BASE}/SHA256SUMS.txt"
 curl -fsSLO "${BASE}/release-approval.txt"
 curl -fsSLO "${BASE}/release-approval.sig"
-curl -fsSL -o release-signers "https://raw.githubusercontent.com/zakura-core/zakura/${TAG}/.github/release-signers"
+curl -fsSL -o release-signers "https://raw.githubusercontent.com/zakura-core/zakura/${COMMIT}/.github/release-signers"
 
 # 1. A listed maintainer key signed the approval. Prints who signed it.
 SIGNER="$(ssh-keygen -Y find-principals -f release-signers -s release-approval.sig)"
@@ -34,7 +38,6 @@ ssh-keygen -Y verify -f release-signers -I "$SIGNER" -n zakura-release \
   -s release-approval.sig < release-approval.txt
 
 # 2. The approval names this repository, tag, commit, and checksums file.
-COMMIT="$(git ls-remote https://github.com/zakura-core/zakura "refs/tags/${TAG}" | cut -f1)"
 printf 'zakura-release-approval v1\nrepository zakura-core/zakura\ntag %s\ncommit %s\nsha256sums %s\n' \
   "$TAG" "$COMMIT" "$(sha256sum SHA256SUMS.txt | cut -d' ' -f1)" \
   | diff - release-approval.txt && echo "Approval matches this release"
@@ -43,7 +46,8 @@ printf 'zakura-release-approval v1\nrepository zakura-core/zakura\ntag %s\ncommi
 sha256sum -c --ignore-missing SHA256SUMS.txt
 ```
 
-Each step must succeed. Step 1 prints `Good "zakura-release" signature for
+Each step must succeed. The commit check prints the 40-character commit; if it
+prints nothing, the tag lookup failed, so stop. Step 1 prints `Good "zakura-release" signature for
 <signer>`, step 2 prints `Approval matches this release`, and step 3 prints
 `OK`. On macOS, replace `sha256sum` with `shasum -a 256`.
 
@@ -100,7 +104,8 @@ With the [GitHub CLI](https://cli.github.com/) installed:
 
 ```sh
 TAG=v1.0.0
-COMMIT="$(git ls-remote https://github.com/zakura-core/zakura "refs/tags/${TAG}" | cut -f1)"
+COMMIT="$(git ls-remote --tags --refs https://github.com/zakura-core/zakura | awk -v ref="refs/tags/${TAG}" '$2 == ref {print $1}')"
+echo "$COMMIT" | grep -Ex '[0-9a-f]{40}' &&
 gh attestation verify "zakurad-${TAG}-linux-x86_64.tar.gz" --repo zakura-core/zakura \
   --source-digest "$COMMIT" \
   --signer-workflow zakura-core/zakura/.github/workflows/release-binaries.yml \
