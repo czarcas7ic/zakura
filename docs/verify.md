@@ -115,7 +115,9 @@ gh attestation verify "zakurad-${TAG}-linux-x86_64.tar.gz" --repo zakura-core/za
 This proves the file was built by the `release-binaries` workflow in this
 repository at the tagged commit, and has not been modified since. Without
 `--source-digest` and `--signer-workflow`, the command only checks the
-repository.
+repository. For releases from before the security-key approval, the workflow
+checked out the tag by name, so a branch with the same name could have been
+built instead; their attestation does not rule that out.
 
 ## Docker images
 

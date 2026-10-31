@@ -363,7 +363,9 @@ What Mode B trades, explicitly:
   The run uses the workflow stored at that tag. For releases made before the
   security-key approval gate, that older workflow also republishes the Docker
   images, and for a stable release moves `zakuracore/zakura:latest` back to
-  it, so repair such a release only when that is acceptable. The tag dress
+  it. It also checks out the tag by its short name, so first confirm no branch
+  shares the tag's name, or its provenance would name the tag's commit for
+  that branch's code. Repair such a release only when that is acceptable. The tag dress
   rehearsal of the same commit is what keeps this risk small — and juggling a
   repair alone is exactly the failure mode Mode A avoids;
 - until signing, the release page has no `SHA256SUMS.txt`/signature, so
