@@ -26,7 +26,10 @@ grant it access only to the `zakura` repository.
 Create a private key for the app. Configure a GitHub Actions environment named
 `release`, add the app's client ID as the environment variable
 `RELEASE_APP_CLIENT_ID`, and add its private key as the environment secret
-`RELEASE_APP_PRIVATE_KEY`. Configure required reviewers for the environment so
+`RELEASE_APP_PRIVATE_KEY_GATED`. Do not also store it in this environment as
+`RELEASE_APP_PRIVATE_KEY`: workflows from before the security-key gate read
+that name, so a hotfix branch based on an old release could otherwise publish
+without a signed approval. Configure required reviewers for the environment so
 that creating a release requires explicit approval. Every reviewer must also
 be a release signer with a security key listed in `.github/release-signers`,
 because the publish job only accepts an approval made with
