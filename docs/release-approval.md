@@ -52,8 +52,15 @@ authenticators are rejected: the key must be attested by Yubico.
 
 4. Commit those two files and open a PR.
 
-5. Ask a repository admin to add you as a required reviewer on the `release`
-   environment (Settings > Environments > release).
+5. Check that you are a required reviewer on the `release` environment:
+
+   ```bash
+   gh api repos/zakura-core/zakura/environments/release \
+     --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[].reviewer.login]'
+   ```
+
+   If your login is not in the list, ask a repository admin to add you
+   (Settings > Environments > release > Required reviewers).
 
 ## Approving a release
 
