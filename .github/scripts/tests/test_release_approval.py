@@ -1,7 +1,10 @@
 """Release approvals accept only touch-and-PIN security-key signatures."""
 
+from __future__ import annotations
+
 import base64
 import hashlib
+import os
 import shutil
 import struct
 import subprocess
@@ -9,6 +12,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -22,7 +26,10 @@ SK_ED25519 = "sk-ssh-ed25519@openssh.com"
 MESSAGE = ra.approval_message(REPOSITORY, TAG, COMMIT, SUMS)
 GITHUB_DIR = Path(__file__).resolve().parents[2]
 YUBICO_CA = GITHUB_DIR / "yubico-ca"
-ATTESTATIONS = GITHUB_DIR / "release-attestations"
+# The 2026-10-31 drill key, kept apart from the live signer list so enrolling
+# or revoking real keys never breaks these tests.
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "release_approval"
+DRILL_SIGNERS = (FIXTURES / "release-signers").read_text()
 
 
 def ssh_string(value: bytes) -> bytes:
@@ -179,7 +186,7 @@ class ApprovalCommentTests(unittest.TestCase):
 
     def test_button_only_approval_is_rejected(self):
         with self.assertRaisesRegex(ra.ApprovalError, "approve-release.sh"):
-            ra.verify_approvals(signer_line(), [approval("")], MESSAGE, ATTESTATIONS, YUBICO_CA)
+            ra.verify_approvals(signer_line(), [approval("")], MESSAGE, FIXTURES, YUBICO_CA)
 
     def test_reports_each_failed_signature(self):
         approvals = [
@@ -187,7 +194,7 @@ class ApprovalCommentTests(unittest.TestCase):
             approval(ra.COMMENT_PREFIX + "!!!", login="mallory"),
         ]
         with self.assertRaisesRegex(ra.ApprovalError, "adam: .*PIN.*mallory: .*base64"):
-            ra.verify_approvals(signer_line(), approvals, MESSAGE, ATTESTATIONS, YUBICO_CA)
+            ra.verify_approvals(signer_line(), approvals, MESSAGE, FIXTURES, YUBICO_CA)
 
     def test_rejects_non_list_payload(self):
         with self.assertRaises(ra.ApprovalError):
@@ -201,20 +208,43 @@ def ssh_key_parts(key: str):
     return reader.string(), reader.string()
 
 
-def fake_attestation(workdir: Path, key: str, principal: str) -> bytes:
-    """Builds an attestation signed by a self-made certificate, as software would."""
+def make_certificate(workdir: Path, name: str, issuer: str | None = None) -> None:
+    """Writes `<name>.key` and `<name>.pem`, self-signed or issued by `<issuer>`."""
+    key, pem = str(workdir / f"{name}.key"), str(workdir / f"{name}.pem")
+    new_key = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
+               "-pkeyopt", "ec_param_enc:named_curve", "-nodes", "-subj", f"/CN={name}"]
+    if issuer is None:
+        # `req -x509` marks the certificate as a CA, so it can issue others.
+        subprocess.run(
+            ["openssl", "req", "-x509", *new_key, "-days", "2", "-keyout", key, "-out", pem],
+            check=True, capture_output=True,
+        )
+        return
+    csr = str(workdir / f"{name}.csr")
+    subprocess.run(
+        ["openssl", "req", *new_key, "-keyout", key, "-out", csr],
+        check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["openssl", "x509", "-req", "-days", "2", "-in", csr, "-set_serial", "2",
+         "-CA", str(workdir / f"{issuer}.pem"), "-CAkey", str(workdir / f"{issuer}.key"),
+         "-out", pem],
+        check=True, capture_output=True,
+    )
+
+
+def fake_attestation(workdir: Path, key: str, principal: str, issuer: str | None = None) -> bytes:
+    """Builds an attestation from a certificate we control, as software would.
+
+    The certificate is self-signed, or issued by the CA `issuer` in `workdir`.
+    """
     point, application = ssh_key_parts(key)
     cose = bytes.fromhex("a4010103272006215820") + point
     auth_data = (
         hashlib.sha256(application).digest() + bytes([0x45]) + bytes(4) + bytes(16)
         + struct.pack(">H", 1) + b"\x00" + cose
     )
-    subprocess.run(
-        ["openssl", "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
-         "-nodes", "-subj", "/CN=Yubico U2F EE Serial 1", "-days", "1",
-         "-keyout", str(workdir / "fake.key"), "-out", str(workdir / "fake.pem")],
-        check=True, capture_output=True,
-    )
+    make_certificate(workdir, "fake", issuer)
     der = subprocess.run(
         ["openssl", "x509", "-in", str(workdir / "fake.pem"), "-outform", "der"],
         check=True, capture_output=True,
@@ -236,15 +266,15 @@ class AttestationTests(unittest.TestCase):
     """Signer keys must be attested by a genuine YubiKey."""
 
     def setUp(self):
-        self.signers = (GITHUB_DIR / "release-signers").read_text()
-        (entry,) = [e for e in ra.parse_signers(self.signers) if e.principal == "czarcas7ic"]
+        self.signers = DRILL_SIGNERS
+        (entry,) = ra.parse_signers(self.signers)
         self.key_type, self.key = entry.key_type, entry.key
-        self.attestation = (ATTESTATIONS / entry.attestation_name).read_bytes()
+        self.attestation = (FIXTURES / entry.attestation_name).read_bytes()
 
-    def test_every_repository_signer_is_attested(self):
-        self.assertIn(
-            "czarcas7ic-bee0b3725e09ac6a.attestation",
-            ra.check_signer_attestations(self.signers, ATTESTATIONS, YUBICO_CA),
+    def test_genuine_yubikey_attestation_passes(self):
+        self.assertEqual(
+            ra.check_signer_attestations(self.signers, FIXTURES, YUBICO_CA),
+            ["czarcas7ic-bee0b3725e09ac6a.attestation"],
         )
 
     def test_attestation_is_bound_to_its_principal(self):
@@ -269,6 +299,23 @@ class AttestationTests(unittest.TestCase):
             fake = fake_attestation(Path(workdir), self.key, "czarcas7ic")
             with self.assertRaisesRegex(ra.ApprovalError, "does not chain to a Yubico FIDO root"):
                 ra.check_attestation("czarcas7ic", self.key_type, self.key, fake, YUBICO_CA)
+
+    def test_system_trust_store_is_not_trusted(self):
+        """A certificate from any CA the runner trusts, such as a public TLS CA, is not Yubico."""
+        with tempfile.TemporaryDirectory() as workdir:
+            workdir = Path(workdir)
+            make_certificate(workdir, "public-ca")
+            fake = fake_attestation(workdir, self.key, "czarcas7ic", issuer="public-ca")
+            store = workdir / "store"
+            store.mkdir()
+            subject_hash = subprocess.run(
+                ["openssl", "x509", "-noout", "-subject_hash", "-in", str(workdir / "public-ca.pem")],
+                check=True, capture_output=True, text=True,
+            ).stdout.strip()
+            shutil.copy(workdir / "public-ca.pem", store / f"{subject_hash}.0")
+            with mock.patch.dict(os.environ, {"SSL_CERT_DIR": str(store)}):
+                with self.assertRaisesRegex(ra.ApprovalError, "does not chain to a Yubico FIDO root"):
+                    ra.check_attestation("czarcas7ic", self.key_type, self.key, fake, YUBICO_CA)
 
     def test_signer_without_attestation_is_rejected(self):
         with tempfile.TemporaryDirectory() as workdir:
@@ -302,14 +349,14 @@ class YubiKeyApprovalTests(unittest.TestCase):
     """The full gate, run on a genuine YubiKey approval."""
 
     def setUp(self):
-        self.signers = (GITHUB_DIR / "release-signers").read_text()
+        self.signers = DRILL_SIGNERS
 
     def verify(self, *release):
         return ra.verify_approvals(
             self.signers,
             [approval("LGTM"), approval(DRILL_APPROVAL, login="czarcas7ic")],
             ra.approval_message(*release),
-            ATTESTATIONS,
+            FIXTURES,
             YUBICO_CA,
         )
 
@@ -346,6 +393,18 @@ class YubiKeyApprovalTests(unittest.TestCase):
                     Path(workdir),
                     YUBICO_CA,
                 )
+
+
+@unittest.skipIf(shutil.which("openssl") is None, "openssl is not installed")
+class LiveSignersTests(unittest.TestCase):
+    """Every key in .github/release-signers must carry a valid Yubico attestation."""
+
+    def test_every_listed_key_is_attested(self):
+        signers = (GITHUB_DIR / "release-signers").read_text()
+        names = ra.check_signer_attestations(
+            signers, GITHUB_DIR / "release-attestations", YUBICO_CA
+        )
+        self.assertEqual(len(names), len(ra.parse_signers(signers)))
 
 
 @unittest.skipIf(shutil.which("ssh-keygen") is None, "ssh-keygen is not installed")

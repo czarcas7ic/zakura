@@ -323,9 +323,11 @@ def check_attestation(
     with tempfile.TemporaryDirectory() as workdir:
         leaf = Path(workdir, "leaf.pem")
         converted = _openssl("x509", "-inform", "der", "-out", str(leaf), data=certificate)
+        # -trusted makes the pinned roots the only trust anchors. With -CAfile,
+        # OpenSSL also trusts the system CA directory, so any public CA would pass.
         chained = _openssl(
             "verify",
-            "-CAfile", str(yubico_ca / "roots.pem"),
+            "-trusted", str(yubico_ca / "roots.pem"),
             "-untrusted", str(yubico_ca / "intermediates.pem"),
             str(leaf),
         )
