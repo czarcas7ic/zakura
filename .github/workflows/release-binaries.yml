@@ -143,9 +143,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # Full tag refs: actions/checkout resolves a short name to a branch
+          # first, so a writer's same-named branch could supply the build.
           if [ "$REF_TYPE" = "tag" ]; then
             release_tag="$REF_NAME"
-            checkout_ref="$REF_NAME"
+            checkout_ref="refs/tags/$REF_NAME"
           else
             release_tag="$INPUT_RELEASE_TAG"
             # Reusable staging builds pin the validated commit before its tag
@@ -159,7 +161,7 @@ jobs:
               fi
               checkout_ref="$INPUT_CHECKOUT_REF"
             elif [ -n "$release_tag" ]; then
-              checkout_ref="$release_tag"
+              checkout_ref="refs/tags/$release_tag"
             else
               checkout_ref="$GITHUB_SHA"
             fi
