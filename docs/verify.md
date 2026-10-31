@@ -50,7 +50,8 @@ Each step must succeed. Step 1 prints `Good "zakura-release" signature for
 Releases made in emergency source-first mode are approved before their
 binaries exist, so their approval reads `sha256sums none` and covers only the
 tag and commit. For those, use `none` in place of the checksum in step 2, and
-check the archives with the build provenance attestation below instead.
+check the archives with the build provenance command below, which pins the
+same commit.
 
 Only releases published after this check was added carry these files.
 
@@ -98,11 +99,18 @@ CI attests every release asset with
 With the [GitHub CLI](https://cli.github.com/) installed:
 
 ```sh
-gh attestation verify zakurad-v1.0.0-linux-x86_64.tar.gz --repo zakura-core/zakura
+TAG=v1.0.0
+COMMIT="$(git ls-remote https://github.com/zakura-core/zakura "refs/tags/${TAG}" | cut -f1)"
+gh attestation verify "zakurad-${TAG}-linux-x86_64.tar.gz" --repo zakura-core/zakura \
+  --source-digest "$COMMIT" \
+  --signer-workflow zakura-core/zakura/.github/workflows/release-binaries.yml \
+  && echo "Provenance OK"
 ```
 
 This proves the file was built by the `release-binaries` workflow in this
-repository at the tagged commit, and has not been modified since.
+repository at the tagged commit, and has not been modified since. Without
+`--source-digest` and `--signer-workflow`, the command only checks the
+repository.
 
 ## Docker images
 
