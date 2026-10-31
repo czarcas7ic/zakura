@@ -1,8 +1,8 @@
 # Security keys allowed to approve Zakura releases.
 #
-# One line per signer: GitHub login, namespace, and the public half of a
+# One line per signer: GitHub username, namespace, and the public half of a
 # YubiKey-resident key. Each signer also needs the YubiKey attestation in
-# .github/release-attestations/<login>.attestation. Create release accepts an
+# .github/release-attestations/<username>.attestation. Create release accepts an
 # approval only if it is signed by a key listed here at the release commit, and
 # users verify published releases against this file on main.
 # Add a key with scripts/enroll-release-key.sh (see docs/release-approval.md).

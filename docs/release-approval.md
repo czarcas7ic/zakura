@@ -41,13 +41,16 @@ authenticators are rejected: the key must be attested by Yubico.
    the key when asked.
 
    ```bash
-   ./scripts/enroll-release-key.sh <your-github-login>
+   ./scripts/enroll-release-key.sh <your-github-username>
    ```
+
+   Use your GitHub username, the name in your profile URL, for example
+   `./scripts/enroll-release-key.sh ebfull`.
 
    This writes the key handle to `~/.ssh/id_ed25519_sk_zakura_release` (only a
    handle: useless without the YubiKey and its PIN), adds your line to
    [`.github/release-signers`](../.github/release-signers), and saves the
-   YubiKey's attestation to `.github/release-attestations/<login>.attestation`.
+   YubiKey's attestation to `.github/release-attestations/<username>.attestation`.
    It then checks that the attestation chains to Yubico.
 
 4. Commit those two files and open a PR.
@@ -59,7 +62,7 @@ authenticators are rejected: the key must be attested by Yubico.
      --jq '[.protection_rules[] | select(.type == "required_reviewers") | .reviewers[].reviewer.login]'
    ```
 
-   If your login is not in the list, ask a repository admin to add you
+   If your username is not in the list, ask a repository admin to add you
    (Settings > Environments > release > Required reviewers).
 
 ## Approving a release

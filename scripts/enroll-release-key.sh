@@ -7,7 +7,9 @@
 # changed files and open a PR. See docs/release-approval.md.
 #
 # Usage:
-#   scripts/enroll-release-key.sh <github-login> [--key PATH]
+#   scripts/enroll-release-key.sh <github-username> [--key PATH]
+#
+#   For example: scripts/enroll-release-key.sh ebfull
 #
 # Options:
 #   --key PATH  where to write the key handle
@@ -23,12 +25,12 @@ die() { printf 'ERROR   %s\n' "$*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --key) KEY="$2"; shift 2 ;;
-    -h | --help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h | --help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1 (see --help)" ;;
     *) LOGIN="$1"; shift ;;
   esac
 done
-[[ "$LOGIN" =~ ^[A-Za-z0-9-]+$ ]] || die "pass your GitHub login (see --help)"
+[[ "$LOGIN" =~ ^[A-Za-z0-9-]+$ ]] || die "pass your GitHub username, for example: $0 ebfull"
 [ ! -e "$KEY" ] || die "${KEY} already exists; move it aside to replace it (mv ${KEY} ${KEY}.old)"
 
 # macOS's bundled ssh-keygen has no FIDO support.
