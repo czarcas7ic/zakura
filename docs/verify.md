@@ -1,9 +1,54 @@
 # Verifying Zakura Releases
 
-Release artifacts can be authenticated with two independent checks. The
-maintainer signature is the stronger claim — a human signed off on the
-release. The build provenance attestation proves the artifacts were built
-unmodified by this repository's CI.
+Release artifacts can be authenticated with independent checks. The security-key
+approval and the maintainer signature are the stronger claims, since a human
+signed off on the release. The build provenance attestation proves the
+artifacts were built unmodified by this repository's CI.
+
+## Security-key approval
+
+Every release is approved by a maintainer's hardware security key before it is
+published. The approval is attached to the release as `release-approval.txt`
+(what was approved) and `release-approval.sig` (the signature). The allowed
+keys are listed in [`.github/release-signers`](../.github/release-signers), and
+CI only accepts keys whose Yubico attestation, in
+[`.github/release-attestations`](../.github/release-attestations), proves they
+live on a YubiKey.
+
+You need `ssh-keygen` from OpenSSH 8.2 or newer, which macOS and current Linux
+distributions already include. To verify an archive (example: linux-x86_64
+for `v1.0.0`):
+
+```sh
+TAG=v1.0.0
+BASE="https://github.com/zakura-core/zakura/releases/download/${TAG}"
+curl -fsSLO "${BASE}/zakurad-${TAG}-linux-x86_64.tar.gz"
+curl -fsSLO "${BASE}/SHA256SUMS.txt"
+curl -fsSLO "${BASE}/release-approval.txt"
+curl -fsSLO "${BASE}/release-approval.sig"
+curl -fsSL -o release-signers https://raw.githubusercontent.com/zakura-core/zakura/main/.github/release-signers
+
+# 1. A listed maintainer key signed the approval. Prints who signed it.
+SIGNER="$(ssh-keygen -Y find-principals -f release-signers -s release-approval.sig)"
+ssh-keygen -Y verify -f release-signers -I "$SIGNER" -n zakura-release \
+  -s release-approval.sig < release-approval.txt
+
+# 2. The approval is for this tag and this checksums file.
+grep -Fx "tag ${TAG}" release-approval.txt
+grep -Fx "sha256sums $(sha256sum SHA256SUMS.txt | cut -d' ' -f1)" release-approval.txt
+
+# 3. The archive matches the approved checksums.
+sha256sum -c --ignore-missing SHA256SUMS.txt
+```
+
+Each step must succeed. Step 1 prints `Good "zakura-release" signature for
+<signer>`, and steps 2 and 3 print the matching lines and `OK`. On macOS,
+replace `sha256sum` with `shasum -a 256`.
+
+Releases made in emergency source-first mode are approved before their
+binaries exist, so their approval reads `sha256sums none` and covers only the
+tag and commit. Check those archives with the build provenance attestation
+below instead.
 
 ## Maintainer signature (minisign)
 

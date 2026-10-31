@@ -117,7 +117,8 @@ allows `hotfix/v*`).
   push `hotfix/v<version>` and dispatch from that branch. Use the exact tag
   and verify each step landed before the next.
 - [ ] Approve the `release` environment deployment when the script announces
-      it (right commit? right tag?). The workflow publishes a complete
+      it, with `scripts/approve-release.sh <run>` and your security key
+      (right commit? right tag?). The workflow publishes a complete
       pre-release and creates the protected tag; the tag push starts Docker
       publishing.
 - [ ] Update the release description from the changelog section.

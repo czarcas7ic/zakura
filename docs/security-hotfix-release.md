@@ -253,6 +253,9 @@ never for anything public.
 - [ ] The `release` environment lists each release-capable maintainer as a
       required reviewer and **"Prevent self-review" is unchecked** — otherwise
       a solo release deadlocks at the approval gate.
+- [ ] Your security key is listed in `.github/release-signers`, is physically
+      with you, and you know its PIN. `scripts/approve-release.sh` needs it to
+      approve (see [release-approval.md](release-approval.md)).
 - [ ] The `release` environment's deployment branch policy includes
       `hotfix/v*`, and the `hotfix/v*` branch ruleset (block deletion and
       force-push) is active.
@@ -332,7 +335,7 @@ clock below is what it does when:
 | T-0 | Branch base: push `hotfix/vX.Y.Z`. Main base: open the public PR from `hotfix/vX.Y.Z` and squash-merge it into `main`. |
 | T+2 | Dispatch `Create release` **from the hotfix branch** (or `main`, for main base) with the exact tag. |
 | T+2–25 | Hands-off build. Meanwhile: fresh checkout for crates publish, final announcement text. |
-| T+25 | Approve the `release` environment (yourself — this is your deliberate stop-and-check point, not a formality: right commit? right tag?). |
+| T+25 | Approve the `release` environment with `scripts/approve-release.sh <run>` and your security key (yourself — this is your deliberate stop-and-check point, not a formality: right commit? right tag?). |
 | T+30 | Tag + complete pre-release published; tag-push run starts Docker publishing. |
 | T+30 | Start the crates publish loop (below) — it runs ~30–60 min, mostly waiting. |
 | T+35 | `make sign-release TAG=v<version>` (signs `SHA256SUMS.txt`, uploads `.minisig`). |
