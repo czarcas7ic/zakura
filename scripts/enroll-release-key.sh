@@ -54,7 +54,7 @@ echo "Creating your release key: enter the YubiKey PIN, then touch the key."
 signers="${repo_root}/.github/release-signers"
 line="${LOGIN} namespaces=\"zakura-release\" $(cut -d' ' -f1,2 "${KEY}.pub")"
 attestation_dir="${repo_root}/.github/release-attestations"
-attestation_name=$(python3 "${repo_root}/.github/scripts/release_approval.py" attestation-name \
+attestation_name=$(python3 -I "${repo_root}/.github/scripts/release_approval.py" attestation-name \
   --signer-line "$line")
 mkdir -p "$attestation_dir"
 cp "${workdir}/attestation" "${attestation_dir}/${attestation_name}"
@@ -62,7 +62,7 @@ cp "${workdir}/attestation" "${attestation_dir}/${attestation_name}"
 [ -z "$(tail -c 1 "$signers")" ] || printf '\n' >> "$signers"
 printf '%s\n' "$line" >> "$signers"
 
-python3 "${repo_root}/.github/scripts/release_approval.py" check-signers \
+python3 -I "${repo_root}/.github/scripts/release_approval.py" check-signers \
   --signers "$signers" --attestations "$attestation_dir" \
   --yubico-ca "${repo_root}/.github/yubico-ca" \
   || die "the new key failed the YubiKey attestation check; is this a genuine YubiKey?"

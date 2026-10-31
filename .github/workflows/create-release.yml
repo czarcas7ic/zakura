@@ -475,7 +475,9 @@ jobs:
             sha256sums="$(sha256sum ./assets/SHA256SUMS.txt | cut -d' ' -f1)"
           fi
           gh api "repos/${REPOSITORY}/actions/runs/${RUN_ID}/approvals" > "$RUNNER_TEMP/approvals.json"
-          python3 release-source/.github/scripts/release_approval.py verify-run \
+          # -I keeps sibling files in .github/scripts from shadowing the modules
+          # the verifier imports.
+          python3 -I release-source/.github/scripts/release_approval.py verify-run \
             --repository "$REPOSITORY" \
             --tag "$RELEASE_TAG" \
             --commit "$TARGET_SHA" \

@@ -407,6 +407,28 @@ class LiveSignersTests(unittest.TestCase):
         self.assertEqual(len(names), len(ra.parse_signers(signers)))
 
 
+class WorkflowTests(unittest.TestCase):
+    def test_publish_runs_the_verifier_isolated(self):
+        """Without -I, a sibling such as .github/scripts/argparse.py would run first."""
+        workflow = (GITHUB_DIR / "workflows" / "create-release.yml").read_text()
+        self.assertIn("python3 -I release-source/.github/scripts/release_approval.py", workflow)
+        self.assertNotIn("python3 release-source/.github/scripts/release_approval.py", workflow)
+
+    def test_sibling_module_cannot_shadow_an_isolated_verifier(self):
+        with tempfile.TemporaryDirectory() as workdir:
+            script = Path(workdir, "release_approval.py")
+            shutil.copy(GITHUB_DIR / "scripts" / "release_approval.py", script)
+            Path(workdir, "argparse.py").write_text("raise SystemExit('shadowed')\n")
+            shadowed = subprocess.run(
+                [sys.executable, str(script), "--help"], capture_output=True, text=True
+            )
+            isolated = subprocess.run(
+                [sys.executable, "-I", str(script), "--help"], capture_output=True, text=True
+            )
+        self.assertIn("shadowed", shadowed.stderr)
+        self.assertEqual(isolated.returncode, 0, isolated.stderr)
+
+
 @unittest.skipIf(shutil.which("ssh-keygen") is None, "ssh-keygen is not installed")
 class SoftwareKeyTests(unittest.TestCase):
     """A real software-key signature is rejected even when listed as a signer."""

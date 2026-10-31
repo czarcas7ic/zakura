@@ -101,14 +101,14 @@ else
 fi
 
 printf 'You are signing:\n'
-python3 "$approval" message --repository "$REPO" --tag "$tag" --commit "$commit" \
+python3 -I "$approval" message --repository "$REPO" --tag "$tag" --commit "$commit" \
   --sha256sums "$sha256sums" | sed 's/^/  /'
 printf '\nType the tag to approve it, or anything else to stop: '
 read -r typed
 [ "$typed" = "$tag" ] || die "not approved"
 
 info "signing: enter your security-key PIN, then touch the key (it times out after ~30s)"
-signature=$(python3 "$approval" sign --key "$KEY" --repository "$REPO" --tag "$tag" \
+signature=$(python3 -I "$approval" sign --key "$KEY" --repository "$REPO" --tag "$tag" \
   --commit "$commit" --sha256sums "$sha256sums") \
   || die "signing failed; check the key is plugged in and re-run (nothing was approved)"
 
