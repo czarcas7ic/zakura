@@ -603,11 +603,21 @@ jobs:
               "https://uploads.github.com/repos/${REPOSITORY}/releases/${draft_id}/assets?name=${encoded_name}"
           done
 
+          # Name the approved tag and commit in the publishing request itself: a
+          # repository writer can edit the draft's target while assets upload,
+          # and publishing creates the tag from whatever the draft says.
           html_url="$(
             gh api --method PATCH "repos/${REPOSITORY}/releases/${draft_id}" \
+              --field tag_name="$RELEASE_TAG" \
+              --field target_commitish="$TARGET_SHA" \
               --field draft=false \
               --jq '.html_url'
           )"
+          tagged_sha="$(gh api "repos/${REPOSITORY}/git/ref/tags/${RELEASE_TAG}" --jq '.object.sha')"
+          if [ "$tagged_sha" != "$TARGET_SHA" ]; then
+            echo "::error title=Release tag mismatch::${RELEASE_TAG} points to ${tagged_sha}, not the approved ${TARGET_SHA}. Investigate before using this release." >&2
+            exit 1
+          fi
           echo "Published ${html_url}; tag ${RELEASE_TAG} now points to ${TARGET_SHA}."
 
       # Dispatched rather than called: crates.io matches its Trusted Publisher
