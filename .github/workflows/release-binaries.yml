@@ -558,6 +558,22 @@ jobs:
             gh release delete-asset "$RELEASE_TAG" "$asset" --repo "$REPOSITORY" --yes 2>/dev/null || true
           done
 
+          # A security-key approval (docs/release-approval.md) covers the exact
+          # SHA256SUMS.txt it was signed over. Replacing those assets with
+          # different bytes would leave a published approval that no longer
+          # verifies, so refuse. Source-first approvals (`sha256sums none`)
+          # cover no assets and allow this run to attach them.
+          approval="$(gh release download "$RELEASE_TAG" --repo "$REPOSITORY" \
+            --pattern release-approval.txt --output - 2>/dev/null || true)"
+          approved_sums="$(sed -n 's/^sha256sums //p' <<<"$approval")"
+          if [ -n "$approved_sums" ] && [ "$approved_sums" != none ]; then
+            rebuilt_sums="$(sha256sum ./publish/final/SHA256SUMS.txt | cut -d' ' -f1)"
+            if [ "$rebuilt_sums" != "$approved_sums" ]; then
+              echo "::error title=Approved assets differ::${RELEASE_TAG} was approved for SHA256SUMS.txt ${approved_sums}, but this build produced ${rebuilt_sums}. Refusing to replace security-key approved assets." >&2
+              exit 1
+            fi
+          fi
+
           gh release upload "$RELEASE_TAG" \
             ./publish/final/zakurad-*.tar.gz \
             ./publish/final/zakurad-manifest-*.json \
