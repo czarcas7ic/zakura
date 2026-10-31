@@ -37,8 +37,8 @@ authenticators are rejected: the key must be attested by Yubico.
    ykman fido access change-pin
    ```
 
-3. From a branch off `main`, create your release key. Enter the PIN and touch
-   the key when asked.
+3. From a branch off `main`, with only this YubiKey plugged in, create your
+   release key. Enter the PIN and touch the key when asked.
 
    ```bash
    ./scripts/enroll-release-key.sh <your-github-username>
@@ -48,12 +48,22 @@ authenticators are rejected: the key must be attested by Yubico.
    `./scripts/enroll-release-key.sh ebfull`.
 
    This writes the key handle to `~/.ssh/id_ed25519_sk_zakura_release` (only a
-   handle: useless without the YubiKey and its PIN), adds your line to
+   handle: useless without the YubiKey and its PIN), adds a line for the key to
    [`.github/release-signers`](../.github/release-signers), and saves the
-   YubiKey's attestation to `.github/release-attestations/<username>.attestation`.
+   YubiKey's attestation to
+   `.github/release-attestations/<username>-<key fingerprint>.attestation`.
    It then checks that the attestation chains to Yubico.
 
-4. Commit those two files and open a PR.
+   **Backup YubiKey.** FIDO2 keys are created inside each YubiKey and cannot
+   be copied, so a backup gets its own key. Swap in the backup and run the
+   script again with a second handle path. Either key can then approve.
+
+   ```bash
+   ./scripts/enroll-release-key.sh <your-github-username> --key ~/.ssh/id_ed25519_sk_zakura_release_backup
+   ```
+
+4. Commit the changed files (`.github/release-signers` and one attestation per
+   key) and open a PR.
 
 5. Check that you are a required reviewer on the `release` environment:
 
@@ -75,6 +85,9 @@ authenticators are rejected: the key must be attested by Yubico.
    ./scripts/approve-release.sh <run URL or id>
    ```
 
+   With your backup YubiKey, add
+   `--key ~/.ssh/id_ed25519_sk_zakura_release_backup`.
+
 3. Read what it shows: the tag, the commit and its subject, the job results
    (including the `us-east-0` start canary), and the staged assets, whose
    checksums the script re-checks on your machine. If anything looks wrong,
@@ -95,8 +108,9 @@ authenticators are rejected: the key must be attested by Yubico.
 | `your GitHub account is not a reviewer` | Ask an admin to add you to the `release` environment (step 5). |
 | Publish job failed with "no security-key signature" | Someone clicked the GitHub button. Nothing was tagged, so start a new `Create release` run for the same tag and approve that one with the script. Avoid "Re-run failed jobs": in testing, GitHub left those re-runs stuck in "queued". |
 | Publish job failed with "not from exactly one listed release signer" | Your key is not in `.github/release-signers` at the release commit. |
-| PIN locked after too many wrong tries | `ykman fido reset` wipes the key. Move the old handle aside and enroll again (step 3). |
-| Lost or replaced key | Enroll the new key (step 3), or open a PR removing your line and attestation. |
+| PIN locked after too many wrong tries | `ykman fido reset` wipes the key. Remove its line and attestation, move the old handle aside, and enroll again (step 3). |
+| Lost or replaced key | Open a PR removing that key's line from `.github/release-signers` and its attestation file (the fingerprint in the file name matches the key). Your backup key keeps working meanwhile. Enroll a replacement with step 3. |
+| New machine | With the YubiKey plugged in, `ssh-keygen -K` recovers its handle; save it as `~/.ssh/id_ed25519_sk_zakura_release`. |
 
 ## How the check works
 

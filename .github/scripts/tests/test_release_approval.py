@@ -54,8 +54,8 @@ def compact(blob: bytes) -> str:
     return base64.b64encode(blob).decode()
 
 
-def signer_line(key_type=SK_ED25519, namespace=ra.NAMESPACE, principal="adam"):
-    key = base64.b64encode(bytes(32)).decode()
+def signer_line(key_type=SK_ED25519, namespace=ra.NAMESPACE, principal="adam", seed=0):
+    key = base64.b64encode(bytes([seed]) * 32).decode()
     return f'{principal} namespaces="{namespace}" {key_type} {key}'
 
 
@@ -139,12 +139,18 @@ class FlagTests(unittest.TestCase):
 
 class SignersTests(unittest.TestCase):
     def test_accepts_security_keys_and_skips_comments(self):
-        text = f"# release signers\n\n{signer_line()}\n{signer_line(principal='ebfull')} laptop\n"
+        text = f"# release signers\n\n{signer_line()}\n{signer_line(principal='ebfull', seed=1)} laptop\n"
         self.assertEqual(ra.check_signers(text).count("\n"), 2)
 
-    def test_rejects_repeated_principal(self):
-        with self.assertRaisesRegex(ra.ApprovalError, "repeats adam"):
-            ra.check_signers(f"{signer_line()}\n{signer_line()}\n")
+    def test_rejects_repeated_key(self):
+        with self.assertRaisesRegex(ra.ApprovalError, "repeats an earlier key"):
+            ra.check_signers(f"{signer_line()}\n{signer_line(principal='ebfull')}\n")
+
+    def test_signer_may_list_a_backup_key(self):
+        entries = ra.parse_signers(f"{signer_line()}\n{signer_line(seed=1)}\n")
+        self.assertEqual([entry.principal for entry in entries], ["adam", "adam"])
+        self.assertEqual(len({entry.attestation_name for entry in entries}), 2)
+        self.assertTrue(all(entry.attestation_name.startswith("adam-") for entry in entries))
 
     def test_rejects_weakened_lists(self):
         for text in (
@@ -231,12 +237,14 @@ class AttestationTests(unittest.TestCase):
 
     def setUp(self):
         self.signers = (GITHUB_DIR / "release-signers").read_text()
-        self.key_type, self.key, _ = ra.parse_signers(self.signers)["czarcas7ic"]
-        self.attestation = (ATTESTATIONS / "czarcas7ic.attestation").read_bytes()
+        (entry,) = [e for e in ra.parse_signers(self.signers) if e.principal == "czarcas7ic"]
+        self.key_type, self.key = entry.key_type, entry.key
+        self.attestation = (ATTESTATIONS / entry.attestation_name).read_bytes()
 
     def test_every_repository_signer_is_attested(self):
         self.assertIn(
-            "czarcas7ic", ra.check_signer_attestations(self.signers, ATTESTATIONS, YUBICO_CA)
+            "czarcas7ic-bee0b3725e09ac6a.attestation",
+            ra.check_signer_attestations(self.signers, ATTESTATIONS, YUBICO_CA),
         )
 
     def test_attestation_is_bound_to_its_principal(self):
@@ -264,7 +272,7 @@ class AttestationTests(unittest.TestCase):
 
     def test_signer_without_attestation_is_rejected(self):
         with tempfile.TemporaryDirectory() as workdir:
-            with self.assertRaisesRegex(ra.ApprovalError, "No attestation for release signer"):
+            with self.assertRaisesRegex(ra.ApprovalError, "No YubiKey attestation for czarcas7ic"):
                 ra.check_signer_attestations(self.signers, Path(workdir), YUBICO_CA)
 
 
@@ -322,6 +330,11 @@ class YubiKeyApprovalTests(unittest.TestCase):
             with self.subTest(release=release):
                 with self.assertRaisesRegex(ra.ApprovalError, "does not approve this release"):
                     self.verify(*release)
+
+    def test_approval_from_one_of_several_keys(self):
+        self.signers = signer_line(principal="czarcas7ic", seed=9) + "\n" + self.signers
+        approver, principal, _ = self.verify(*DRILL_RELEASE)
+        self.assertEqual((approver, principal), ("czarcas7ic", "czarcas7ic"))
 
     def test_approval_needs_the_signers_attestation(self):
         with tempfile.TemporaryDirectory() as workdir:

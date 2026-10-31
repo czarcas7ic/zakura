@@ -16,9 +16,11 @@ user-verification (PIN) flags. Those flags are covered by the signature, so
 they cannot be edited without breaking it.
 
 A `sk-` key type alone does not prove hardware, since software can emulate a
-FIDO authenticator. Each signer therefore also commits the attestation that
+FIDO authenticator. Each listed key therefore also has the attestation that
 `scripts/enroll-release-key.sh` saved when the key was created on the
 YubiKey. It must chain to a pinned Yubico FIDO root and attest that exact key.
+A signer may list several keys, such as a backup YubiKey, each with its own
+attestation.
 """
 
 from __future__ import annotations
@@ -77,6 +79,23 @@ class SignatureInfo:
     key_type: str
     namespace: str
     flags: int
+    public_key: bytes
+
+
+@dataclass(frozen=True)
+class SignerKey:
+    """One key line from a release-signers list."""
+
+    principal: str
+    key_type: str
+    key: str
+    line: str
+
+    @property
+    def attestation_name(self) -> str:
+        """Names this key's attestation file: the principal plus a key fingerprint."""
+        fingerprint = hashlib.sha256(base64.b64decode(self.key)).hexdigest()[:16]
+        return f"{self.principal}-{fingerprint}.attestation"
 
 
 def approval_message(repository: str, tag: str, commit: str, sha256sums: str) -> bytes:
@@ -155,7 +174,8 @@ def parse_signature(blob: bytes) -> SignatureInfo:
     outer = _Reader(blob)
     if outer.take(6) != b"SSHSIG" or outer.u32() != 1:
         raise ApprovalError("Signature is not an SSHSIG v1 signature.")
-    public_key = _Reader(outer.string())
+    public_key_blob = outer.string()
+    public_key = _Reader(public_key_blob)
     namespace = outer.string().decode(errors="replace")
     outer.string()  # reserved
     outer.string()  # hash algorithm
@@ -173,16 +193,19 @@ def parse_signature(blob: bytes) -> SignatureInfo:
     signature.u32()  # signature counter
     if not signature.done():
         raise ApprovalError("Signature has trailing data after its counter.")
-    return SignatureInfo(key_type=key_type, namespace=namespace, flags=flags)
+    return SignatureInfo(
+        key_type=key_type, namespace=namespace, flags=flags, public_key=public_key_blob
+    )
 
 
-def parse_signers(text: str) -> dict[str, tuple[str, str, str]]:
-    """Parses a release-signers list into `principal -> (key type, key, line)`.
+def parse_signers(text: str) -> list[SignerKey]:
+    """Parses a release-signers list into one `SignerKey` per line.
 
-    Every entry must be a security key scoped to the release namespace, and
-    each principal may appear once, so its attestation file is unambiguous.
+    Every entry must be a security key scoped to the release namespace. A
+    principal may list several keys, but each key appears only once.
     """
-    entries = {}
+    entries = []
+    seen_keys = set()
     for number, raw in enumerate(text.splitlines(), start=1):
         line = raw.strip()
         if not line or line.startswith("#"):
@@ -201,9 +224,10 @@ def parse_signers(text: str) -> dict[str, tuple[str, str, str]]:
                 f"Release signers line {number} is a {match['key_type']} key, "
                 "not a FIDO security key."
             )
-        if match["principal"] in entries:
-            raise ApprovalError(f"Release signers line {number} repeats {match['principal']}.")
-        entries[match["principal"]] = (match["key_type"], match["key"], line)
+        if match["key"] in seen_keys:
+            raise ApprovalError(f"Release signers line {number} repeats an earlier key.")
+        seen_keys.add(match["key"])
+        entries.append(SignerKey(match["principal"], match["key_type"], match["key"], line))
     if not entries:
         raise ApprovalError("No release signers are configured.")
     return entries
@@ -211,7 +235,7 @@ def parse_signers(text: str) -> dict[str, tuple[str, str, str]]:
 
 def check_signers(text: str) -> str:
     """Validates a release-signers list (see `parse_signers`) and returns it normalized."""
-    return "".join(line + "\n" for _, _, line in parse_signers(text).values())
+    return "".join(entry.line + "\n" for entry in parse_signers(text))
 
 
 def _cbor_item(data: bytes, offset: int, depth: int = 0):
@@ -323,15 +347,20 @@ def check_attestation(
             raise ApprovalError(f"Attestation signature for {principal} is invalid.")
 
 
+def check_key_attestation(entry: SignerKey, attestations: Path, yubico_ca: Path) -> None:
+    """Checks one listed key against its attestation file (see `check_attestation`)."""
+    path = attestations / entry.attestation_name
+    if not path.is_file():
+        raise ApprovalError(f"No YubiKey attestation for {entry.principal} at {path}.")
+    check_attestation(entry.principal, entry.key_type, entry.key, path.read_bytes(), yubico_ca)
+
+
 def check_signer_attestations(signers: str, attestations: Path, yubico_ca: Path) -> list[str]:
-    """Checks every signer's attestation and returns the principals."""
+    """Checks every listed key's attestation and returns their attestation names."""
     entries = parse_signers(signers)
-    for principal, (key_type, key, _) in entries.items():
-        path = attestations / f"{principal}.attestation"
-        if not path.is_file():
-            raise ApprovalError(f"No attestation for release signer {principal} at {path}.")
-        check_attestation(principal, key_type, key, path.read_bytes(), yubico_ca)
-    return list(entries)
+    for entry in entries:
+        check_key_attestation(entry, attestations, yubico_ca)
+    return [entry.attestation_name for entry in entries]
 
 
 def _ssh_keygen() -> str:
@@ -348,8 +377,9 @@ def _ssh_keygen() -> str:
     return found
 
 
-def verify(signers: str, signature: str, message: bytes) -> str:
-    """Verifies one signature over `message` and returns the signer's principal."""
+def verify(signers: str, signature: str, message: bytes) -> SignerKey:
+    """Verifies one signature over `message` and returns the listed key that made it."""
+    entries = parse_signers(signers)
     signers = check_signers(signers)
     blob = decode_signature(signature)
     info = parse_signature(blob)
@@ -387,7 +417,10 @@ def verify(signers: str, signature: str, message: bytes) -> str:
         )
         if checked.returncode != 0:
             raise ApprovalError(f"Signature from {principal} does not approve this release.")
-    return principal
+    for entry in entries:
+        if entry.principal == principal and base64.b64decode(entry.key) == info.public_key:
+            return entry
+    raise ApprovalError("Signature key is not listed for its principal.")
 
 
 def approval_signatures(approvals: list) -> list[tuple[str, str]]:
@@ -431,16 +464,12 @@ def verify_approvals(
     failures = []
     for approver, signature in candidates:
         try:
-            principal = verify(signers, signature, message)
-            key_type, key, _ = parse_signers(signers)[principal]
-            path = attestations / f"{principal}.attestation"
-            if not path.is_file():
-                raise ApprovalError(f"No YubiKey attestation for {principal}.")
-            check_attestation(principal, key_type, key, path.read_bytes(), yubico_ca)
+            entry = verify(signers, signature, message)
+            check_key_attestation(entry, attestations, yubico_ca)
         except ApprovalError as error:
             failures.append(f"approval by {approver}: {error}")
             continue
-        return approver, principal, decode_signature(signature)
+        return approver, entry.principal, decode_signature(signature)
     raise ApprovalError("No valid signed approval. " + " ".join(failures))
 
 
@@ -467,6 +496,8 @@ def main() -> int:
     """Runs the `message`, `sign`, `verify-run`, or `check-signers` subcommand."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest="command", required=True)
+    name_cmd = sub.add_parser("attestation-name", help="print the attestation file name for a key")
+    name_cmd.add_argument("--signer-line", required=True, help="one release-signers line")
     check = sub.add_parser("check-signers", help="check every signer's YubiKey attestation")
     check.add_argument("--signers", required=True, help="release-signers file")
     check.add_argument("--attestations", required=True, help="release-attestations directory")
@@ -492,11 +523,17 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.command == "attestation-name":
+            entries = parse_signers(args.signer_line)
+            if len(entries) != 1:
+                raise ApprovalError("Pass exactly one release-signers line.")
+            print(entries[0].attestation_name)
+            return 0
         if args.command == "check-signers":
-            principals = check_signer_attestations(
+            names = check_signer_attestations(
                 Path(args.signers).read_text(), Path(args.attestations), Path(args.yubico_ca)
             )
-            print("YubiKey attestation OK for: " + ", ".join(principals))
+            print("YubiKey attestation OK for: " + ", ".join(names))
             return 0
         message = approval_message(args.repository, args.tag, args.commit, args.sha256sums)
         if args.command == "message":
