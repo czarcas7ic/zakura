@@ -54,9 +54,7 @@ authenticators are rejected: the key must be attested by Yubico.
    `.github/release-attestations/<username>-<key fingerprint>.attestation`.
    It then checks that the attestation chains to Yubico.
 
-   **Backup YubiKey.** FIDO2 keys are created inside each YubiKey and cannot
-   be copied, so a backup gets its own key. Swap in the backup and run the
-   script again with a second handle path. Either key can then approve.
+   **Backup YubiKey.** Plug in only the backup and run:
 
    ```bash
    ./scripts/enroll-release-key.sh <your-github-username> --key ~/.ssh/id_ed25519_sk_zakura_release_backup
