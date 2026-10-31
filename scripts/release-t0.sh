@@ -668,7 +668,7 @@ step_watch() {
           if resolve_tag_commit "$TAG" >/dev/null; then
             die "$step" "run ${DISPATCHED_RUN_ID} conclusion" "$conclusion" "success" \
               "the run failed AFTER the tag was created; do not re-dispatch —" \
-              "repair assets with release-binaries.yml workflow_dispatch" \
+              "repair assets with release-binaries.yml workflow_dispatch --ref ${TAG}" \
               "(publish_assets_to_release), see docs/security-hotfix-release.md Mode B notes"
           fi
           die "$step" "run ${DISPATCHED_RUN_ID} conclusion" "$conclusion" "success" \
@@ -751,7 +751,7 @@ step_verify_publish() {
     done
     [ -z "$missing" ] \
       || die "$step" "release assets" "missing:${missing}" "complete Mode A asset set" \
-          "repair with release-binaries.yml workflow_dispatch (publish_assets_to_release)"
+          "repair with release-binaries.yml workflow_dispatch --ref ${TAG} (publish_assets_to_release)"
   fi
   ok "tag ${TAG} at ${tag_commit:0:9}; release published; assets verified"
 

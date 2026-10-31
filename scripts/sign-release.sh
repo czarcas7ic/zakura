@@ -64,7 +64,7 @@ while read -r _ path; do
 done < "${workdir}/SHA256SUMS.txt"
 
 if [ "$fail" -ne 0 ]; then
-  echo "Refusing to sign ${RELEASE_TAG}: fix the release assets first (workflow_dispatch with publish_assets_to_release)." >&2
+  echo "Refusing to sign ${RELEASE_TAG}: fix the release assets first (workflow_dispatch --ref ${RELEASE_TAG} with publish_assets_to_release)." >&2
   exit 1
 fi
 

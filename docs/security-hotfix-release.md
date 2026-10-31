@@ -358,7 +358,9 @@ What Mode B trades, explicitly:
 
 - an **immutable tag exists before its binaries are verified**; if the
   post-tag build fails, the repair path is `release-binaries.yml`
-  `workflow_dispatch` with `publish_assets_to_release`. The tag dress
+  `workflow_dispatch` with `publish_assets_to_release`, dispatched from the
+  tag itself (`--ref vX.Y.Z`) so its build provenance names the tag's commit.
+  The tag dress
   rehearsal of the same commit is what keeps this risk small — and juggling a
   repair alone is exactly the failure mode Mode A avoids;
 - until signing, the release page has no `SHA256SUMS.txt`/signature, so
