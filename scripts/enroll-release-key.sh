@@ -58,6 +58,8 @@ attestation_name=$(python3 "${repo_root}/.github/scripts/release_approval.py" at
   --signer-line "$line")
 mkdir -p "$attestation_dir"
 cp "${workdir}/attestation" "${attestation_dir}/${attestation_name}"
+# Keep the new key on its own line even if the file lacks a final newline.
+[ -z "$(tail -c 1 "$signers")" ] || printf '\n' >> "$signers"
 printf '%s\n' "$line" >> "$signers"
 
 python3 "${repo_root}/.github/scripts/release_approval.py" check-signers \
