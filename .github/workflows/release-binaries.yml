@@ -6,7 +6,9 @@
 # workflow and never rebuilds or re-uploads anything. Real releases get their
 # own non-hyphenated tag. To repair or re-upload assets for an existing tag,
 # run workflow_dispatch from that tag (--ref <tag>) with
-# publish_assets_to_release. Only a tag push publishes automatically.
+# publish_assets_to_release. Only a tag push publishes automatically; a tag
+# made before this rule carries the older workflow, which also republishes
+# Docker images (see docs/security-hotfix-release.md).
 #
 # Repo guards: every step that touches the outside world (Docker Hub login
 # and pushes, build provenance attestation) only runs when
