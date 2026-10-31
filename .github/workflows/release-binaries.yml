@@ -562,15 +562,23 @@ jobs:
           # SHA256SUMS.txt it was signed over. Replacing those assets with
           # different bytes would leave a published approval that no longer
           # verifies, so refuse. Source-first approvals (`sha256sums none`)
-          # cover no assets and allow this run to attach them.
-          approval="$(gh release download "$RELEASE_TAG" --repo "$REPOSITORY" \
-            --pattern release-approval.txt --output - 2>/dev/null || true)"
-          approved_sums="$(sed -n 's/^sha256sums //p' <<<"$approval")"
-          if [ -n "$approved_sums" ] && [ "$approved_sums" != none ]; then
-            rebuilt_sums="$(sha256sum ./publish/final/SHA256SUMS.txt | cut -d' ' -f1)"
-            if [ "$rebuilt_sums" != "$approved_sums" ]; then
-              echo "::error title=Approved assets differ::${RELEASE_TAG} was approved for SHA256SUMS.txt ${approved_sums}, but this build produced ${rebuilt_sums}. Refusing to replace security-key approved assets." >&2
+          # cover no assets and allow this run to attach them. Releases from
+          # before the gate have no approval. Any lookup error fails the step.
+          asset_names="$(gh api "repos/${REPOSITORY}/releases/tags/${RELEASE_TAG}" --jq '[.assets[].name]')"
+          if jq -e 'any(. == "release-approval.txt")' <<<"$asset_names" >/dev/null; then
+            gh release download "$RELEASE_TAG" --repo "$REPOSITORY" \
+              --pattern release-approval.txt --output ./release-approval.txt
+            mapfile -t approved_sums < <(sed -n 's/^sha256sums //p' ./release-approval.txt)
+            if [ "${#approved_sums[@]}" -ne 1 ] || ! [[ "${approved_sums[0]}" =~ ^([0-9a-f]{64}|none)$ ]]; then
+              echo "::error title=Malformed release approval::${RELEASE_TAG} has a release-approval.txt without exactly one valid sha256sums line." >&2
               exit 1
+            fi
+            if [ "${approved_sums[0]}" != none ]; then
+              rebuilt_sums="$(sha256sum ./publish/final/SHA256SUMS.txt | cut -d' ' -f1)"
+              if [ "$rebuilt_sums" != "${approved_sums[0]}" ]; then
+                echo "::error title=Approved assets differ::${RELEASE_TAG} was approved for SHA256SUMS.txt ${approved_sums[0]}, but this build produced ${rebuilt_sums}. Refusing to replace security-key approved assets." >&2
+                exit 1
+              fi
             fi
           fi
 
